@@ -1,5 +1,21 @@
 #!/usr/bin/bash
 
+echo "Welcome to flask app automation"
+echo "==================================="
+echo "
+Choose the database you want to go with"
+echo "---------------"
+echo "1 . Postgresql
+2. Sqlite
+3. Mongodb "
+echo "=====enter your preferred database number below(1/2/3)=========="
+
+read choice
+
+
+
+########################################################################
+
 mkdir app
 touch run.py
 touch requirements.txt
@@ -10,6 +26,7 @@ mkdir static;mkdir templates
 touch __init__.py;touch config.py;touch model.py;touch dbsetup.py;touch forms.py;touch view.py
 
 
+##################################################################################
 
 configfile="config.py"
 
@@ -31,19 +48,7 @@ class postgresconfig(config):
 
 EOF
 
-
-dbset="dbsetup.py"
-
-cat <<EOF > $dbset
-
-from pymongo import MongoClient
-
-
-client = MongoClient('mongodb://localhost:27017')
-mongo = client['kavi']
-collection = mongo['users']
-
-EOF
+###########################################################################
 
 form="forms.py"
 
@@ -71,13 +76,41 @@ class Userslogin(FlaskForm):
     
 EOF
 
+#############################################################
+
+
+dbset="dbsetup.py"
+
+if [ $choice -eq 3 ]
+then 
+cat <<EOF > $dbset
+from pymongo import MongoClient
+
+client = MongoClient('mongodb://localhost:27017')
+mongo = client['kavi']
+collection = mongo['users']
+
+EOF
+
+else
+
+cat <<EOF > $dbset
+from flask_sqlalchemy import SQLAlchemy
+
+db = SQLAlchemy()
+EOF
+
+fi
+
+##################################################################
+
 vw="view.py"
 
 cat <<EOF > $vw
 
 from flask import render_template,redirect,url_for,current_app as app,jsonify
 from app.forms import Usersregistration
-# from app.model import Users
+from app.model import Users
 from app.dbsetup import collection
 
 ########################################
@@ -86,6 +119,16 @@ from app.dbsetup import collection
 def index():
     return render_template('index.html')
 
+@app.route('/sucessupdate')
+def sucess():
+    return render_template('sucess.html')
+
+
+EOF
+
+if [ $choice -eq 3 ]
+then
+cat <<EOF >> $vw
 @app.route('/register',methods=['GET','POST'])
 def register():
     form=Usersregistration()
@@ -98,19 +141,73 @@ def register():
         return redirect(url_for('sucess'))
     
     return render_template('register.html',form=form)
-
-@app.route('/sucessupdate')
-def sucess():
-    return render_template('sucess.html')
-        
 EOF
+else
+cat <<EOF >>$vw
+@app.route('/register',methods=['GET','POST'])
+def register():
+    form=Usersregistration()
+    if form.validate_on_submit():
+        user=Users(name=form.name.data,
+                  email=form.email.data,
+                  password=form.password.data,
+                  )
+        
+        with app.app_context():
+            checkuser=Users.query.filter_by(email=form.email.data).first()
+            if checkuser:
+                return redirect(url_for('index'))
+            else:
+                db.session.add(user)
+                db.session.commit()
+                return redirect(url_for('sucess'))
+    return render_template('register.html',form=form)
+
+EOF
+fi 
+
+
+###########################################
+
+model="model.py"
+
+if [ $choice -eq 1 ] || [ $choice -eq 2 ]
+then
+cat <<EOF > $model
+from app.dbsetup import db
+from werkzeug.security import generate_password_hash,check_password_hash
+
+class Users(db.Model):
+    user_id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    name = db.Column(db.String(255))
+    email = db.Column(db.String(255), unique=True)
+    hashed_password = db.Column(db.String(255))
+
+    
+    def __init__(self,name,email,password):
+        self.name=name
+        self.email=email
+        self.hashed_password=generate_password_hash(password)
+
+        
+    def check_password(self,password):
+        return check_password_hash(self.hashed_password,password)
+    
+    def get_id(self):
+        return (self.user_id)
+EOF
+
+fi
+
+##############################################
 
 cd ..
 
 entry="run.py"
 
+if [ $choice -eq 3 ]
+then
 cat <<EOF > $entry
-
 
 from flask import Flask
 from app import config
@@ -136,6 +233,83 @@ if __name__=="__main__":
     app.run(debug=True)
 
 EOF
+elif [ $choice -eq 2 ]
+then
+cat <<EOF > $entry
+
+
+from flask import Flask
+from app import config
+from app.dbsetup import db
+from app.config import sqliteconfig, postgresconfig,config
+
+######################################
+
+app=None
+
+def create_app():
+    app=Flask(__name__,template_folder="./app/templates")
+    app.config.from_object(config)
+    app.config.from_object(sqliteconfig)
+    db.init_app(app)
+
+    app.app_context().push()
+
+    with app.app_context():
+        db.create_all()
+
+    return app
+    
+app=create_app()
+
+from app.view import *
+
+
+if __name__=="__main__":
+    app.run(debug=True)
+
+EOF
+elif [ $choice -eq 1 ]
+then
+cat <<EOF > $entry
+
+from flask import Flask
+from app import config
+from app.dbsetup import db
+from app.config import sqliteconfig, postgresconfig,config
+
+######################################
+
+app=None
+
+def create_app():
+    app=Flask(__name__,template_folder="./app/templates")
+    app.config.from_object(config)
+    app.config.from_object(postgresconfig)
+    db.init_app(app)
+
+    app.app_context().push()
+
+    with app.app_context():
+        db.create_all()
+
+    return app
+    
+app=create_app()
+
+from app.view import *
+
+
+if __name__=="__main__":
+    app.run(debug=True)
+
+EOF
+
+else
+cat /dev/null > $entry
+
+fi
+
 
 
 
